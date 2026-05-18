@@ -145,8 +145,11 @@ func NewRRule(arg ROption) (*RRule, error) {
 }
 
 func buildRRule(arg ROption) (*RRule, error) {
+	origOptions := cloneROption(arg)
+	arg = cloneROption(arg)
+
 	r := &RRule{}
-	r.OrigOptions = arg
+	r.OrigOptions = origOptions
 	// FREQ default to YEARLY
 	r.freq = arg.Freq
 
@@ -178,7 +181,7 @@ func buildRRule(arg ROption) (*RRule, error) {
 	}
 
 	r.wkst = arg.Wkst.weekday
-	r.bysetpos = arg.Bysetpos
+	r.bysetpos = cloneIntSlice(arg.Bysetpos)
 
 	if len(arg.Byweekno) == 0 &&
 		len(arg.Byyearday) == 0 &&
@@ -196,9 +199,9 @@ func buildRRule(arg ROption) (*RRule, error) {
 			arg.Byweekday = []Weekday{{weekday: toPyWeekday(r.dtstart.Weekday())}}
 		}
 	}
-	r.bymonth = arg.Bymonth
-	r.byyearday = arg.Byyearday
-	r.byeaster = arg.Byeaster
+	r.bymonth = cloneIntSlice(arg.Bymonth)
+	r.byyearday = cloneIntSlice(arg.Byyearday)
+	r.byeaster = cloneIntSlice(arg.Byeaster)
 	for _, mday := range arg.Bymonthday {
 		if mday > 0 {
 			r.bymonthday = append(r.bymonthday, mday)
@@ -206,7 +209,7 @@ func buildRRule(arg ROption) (*RRule, error) {
 			r.bynmonthday = append(r.bynmonthday, mday)
 		}
 	}
-	r.byweekno = arg.Byweekno
+	r.byweekno = cloneIntSlice(arg.Byweekno)
 	for _, wday := range arg.Byweekday {
 		if wday.n == 0 || r.freq > MONTHLY {
 			r.byweekday = append(r.byweekday, wday.weekday)
@@ -219,7 +222,7 @@ func buildRRule(arg ROption) (*RRule, error) {
 			r.byhour = []int{r.dtstart.Hour()}
 		}
 	} else {
-		r.byhour = arg.Byhour
+		r.byhour = cloneIntSlice(arg.Byhour)
 		if r.freq == HOURLY {
 			validByhour, err := constructByset(r.dtstart.Hour(), r.interval, r.byhour, 24)
 			if err != nil {
@@ -233,7 +236,7 @@ func buildRRule(arg ROption) (*RRule, error) {
 			r.byminute = []int{r.dtstart.Minute()}
 		}
 	} else {
-		r.byminute = arg.Byminute
+		r.byminute = cloneIntSlice(arg.Byminute)
 		if r.freq == MINUTELY {
 			validByminute, err := constructByset(r.dtstart.Minute(), r.interval, r.byminute, 60)
 			if err != nil {
@@ -247,7 +250,7 @@ func buildRRule(arg ROption) (*RRule, error) {
 			r.bysecond = []int{r.dtstart.Second()}
 		}
 	} else {
-		r.bysecond = arg.Bysecond
+		r.bysecond = cloneIntSlice(arg.Bysecond)
 		if r.freq == SECONDLY {
 			validBysecond, err := constructByset(r.dtstart.Second(), r.interval, r.bysecond, 60)
 			if err != nil {
@@ -272,7 +275,7 @@ func buildRRule(arg ROption) (*RRule, error) {
 		sort.Sort(timeSlice(r.timeset))
 	}
 
-	r.Options = arg
+	r.Options = cloneROption(arg)
 	return r, nil
 }
 

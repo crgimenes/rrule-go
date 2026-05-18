@@ -3,6 +3,7 @@
 package rrule
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"time"
@@ -63,6 +64,9 @@ func (set *Set) GetDTStart() time.Time {
 // It returns an error when applying the set DTSTART to the rule fails.
 // There is the only one RRULE in the set as https://tools.ietf.org/html/rfc5545#appendix-A.1
 func (set *Set) RRule(rrule *RRule) error {
+	if rrule == nil {
+		return errors.New("rrule must not be nil")
+	}
 	if !rrule.OrigOptions.Dtstart.IsZero() {
 		set.dtstart = rrule.dtstart
 	} else if !set.dtstart.IsZero() {
@@ -96,7 +100,7 @@ func (set *Set) SetRDates(rdates []time.Time) {
 
 // GetRDate returns explicitly added dates (rdates) in the set
 func (set *Set) GetRDate() []time.Time {
-	return set.rdate
+	return cloneTimeSlice(set.rdate)
 }
 
 // ExDate include the given datetime instance in the recurrence set exclusion list.
@@ -118,7 +122,7 @@ func (set *Set) SetExDates(exdates []time.Time) {
 
 // GetExDate returns explicitly excluded dates (exdates) in the set
 func (set *Set) GetExDate() []time.Time {
-	return set.exdate
+	return cloneTimeSlice(set.exdate)
 }
 
 type genItem struct {
@@ -144,15 +148,17 @@ func (set *Set) Iterator() (next func() (time.Time, bool)) {
 	rlist := []genItem{}
 	exlist := []genItem{}
 
-	sort.Sort(timeSlice(set.rdate))
-	addGenList(&rlist, timeSliceIterator(set.rdate))
+	rdate := cloneTimeSlice(set.rdate)
+	sort.Sort(timeSlice(rdate))
+	addGenList(&rlist, timeSliceIterator(rdate))
 	if set.rrule != nil {
 		addGenList(&rlist, set.rrule.Iterator())
 	}
 	sort.Sort(genItemSlice(rlist))
 
-	sort.Sort(timeSlice(set.exdate))
-	addGenList(&exlist, timeSliceIterator(set.exdate))
+	exdate := cloneTimeSlice(set.exdate)
+	sort.Sort(timeSlice(exdate))
+	addGenList(&exlist, timeSliceIterator(exdate))
 	sort.Sort(genItemSlice(exlist))
 
 	lastdt := time.Time{}

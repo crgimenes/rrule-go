@@ -7,6 +7,8 @@ RFC](http://www.ietf.org/rfc/rfc2445.txt). It is a partial port of the rrule mod
 
 ## Demo
 
+For reminder-specific guidance, including next-occurrence lookup, due windows, snooze, dismissal, and persistence, see [docs/reminders.md](docs/reminders.md).
+
 ### rrule.RRule
 
 ```go

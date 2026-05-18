@@ -71,6 +71,28 @@ func gcd(a, b int) int {
 	return a
 }
 
+func cloneROption(option ROption) ROption {
+	option.Bysetpos = cloneIntSlice(option.Bysetpos)
+	option.Bymonth = cloneIntSlice(option.Bymonth)
+	option.Bymonthday = cloneIntSlice(option.Bymonthday)
+	option.Byyearday = cloneIntSlice(option.Byyearday)
+	option.Byweekno = cloneIntSlice(option.Byweekno)
+	option.Byweekday = slices.Clone(option.Byweekday)
+	option.Byhour = cloneIntSlice(option.Byhour)
+	option.Byminute = cloneIntSlice(option.Byminute)
+	option.Bysecond = cloneIntSlice(option.Bysecond)
+	option.Byeaster = cloneIntSlice(option.Byeaster)
+	return option
+}
+
+func cloneIntSlice(value []int) []int {
+	return slices.Clone(value)
+}
+
+func cloneTimeSlice(value []time.Time) []time.Time {
+	return slices.Clone(value)
+}
+
 func contains(list []int, elem int) bool {
 	return slices.Contains(list, elem)
 }

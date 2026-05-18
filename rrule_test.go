@@ -4069,6 +4069,67 @@ func TestConstructBysetFiltersUnreachableValues(t *testing.T) {
 	}
 }
 
+func TestNewRRuleClonesInputSlices(t *testing.T) {
+	byhour := []int{9}
+	option := ROption{
+		Freq:    DAILY,
+		Count:   1,
+		Byhour:  byhour,
+		Dtstart: time.Date(2026, 5, 18, 0, 0, 0, 0, time.UTC),
+	}
+	r, err := NewRRule(option)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	byhour[0] = 10
+	option.Byhour[0] = 11
+
+	got := r.All()
+	want := []time.Time{time.Date(2026, 5, 18, 9, 0, 0, 0, time.UTC)}
+	if !timesEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	if r.OrigOptions.Byhour[0] != 9 {
+		t.Fatalf("OrigOptions shares caller slice: got %v, want 9", r.OrigOptions.Byhour[0])
+	}
+	if r.Options.Byhour[0] != 9 {
+		t.Fatalf("Options shares caller slice: got %v, want 9", r.Options.Byhour[0])
+	}
+}
+
+func TestUntilGetterAndSetter(t *testing.T) {
+	start := time.Date(2026, 5, 18, 9, 0, 0, 0, time.UTC)
+	until := time.Date(2026, 5, 20, 9, 0, 0, 0, time.UTC)
+	r, err := NewRRule(ROption{
+		Freq:    DAILY,
+		Dtstart: start,
+		Until:   until,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := r.GetUntil(); got != until {
+		t.Fatalf("got %v, want %v", got, until)
+	}
+
+	newUntil := time.Date(2026, 5, 19, 9, 0, 0, 0, time.UTC)
+	if err := r.Until(newUntil); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.GetUntil(); got != newUntil {
+		t.Fatalf("got %v, want %v", got, newUntil)
+	}
+
+	want := []time.Time{
+		time.Date(2026, 5, 18, 9, 0, 0, 0, time.UTC),
+		time.Date(2026, 5, 19, 9, 0, 0, 0, time.UTC),
+	}
+	if got := r.All(); !timesEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
 func TestDTStartErrorDoesNotChangeRule(t *testing.T) {
 	start := time.Date(2000, 3, 22, 12, 0, 0, 0, time.UTC)
 	r, err := NewRRule(ROption{

@@ -145,6 +145,19 @@ func TestSetRDates(t *testing.T) {
 	}
 }
 
+func TestSetGetRDateReturnsCopy(t *testing.T) {
+	set := Set{}
+	original := time.Date(2026, 5, 18, 9, 0, 0, 0, time.UTC)
+	set.RDate(original)
+
+	got := set.GetRDate()
+	got[0] = time.Date(2026, 5, 19, 9, 0, 0, 0, time.UTC)
+
+	if dates := set.GetRDate(); len(dates) != 1 || dates[0] != original {
+		t.Fatalf("GetRDate exposed internal state: got %v, want [%v]", dates, original)
+	}
+}
+
 func TestSetExDate(t *testing.T) {
 	set := Set{}
 	r, _ := NewRRule(ROption{Freq: YEARLY, Count: 6, Byweekday: []Weekday{TU, TH},
@@ -159,6 +172,19 @@ func TestSetExDate(t *testing.T) {
 		time.Date(1997, 9, 16, 9, 0, 0, 0, time.UTC)}
 	if !timesEqual(value, want) {
 		t.Errorf("get %v, want %v", value, want)
+	}
+}
+
+func TestSetGetExDateReturnsCopy(t *testing.T) {
+	set := Set{}
+	original := time.Date(2026, 5, 18, 9, 0, 0, 0, time.UTC)
+	set.ExDate(original)
+
+	got := set.GetExDate()
+	got[0] = time.Date(2026, 5, 19, 9, 0, 0, 0, time.UTC)
+
+	if dates := set.GetExDate(); len(dates) != 1 || dates[0] != original {
+		t.Fatalf("GetExDate exposed internal state: got %v, want [%v]", dates, original)
 	}
 }
 
@@ -194,6 +220,24 @@ func TestSetExDateRevOrder(t *testing.T) {
 		time.Date(2004, 5, 10, 9, 0, 0, 0, time.UTC)}
 	if !timesEqual(value, want) {
 		t.Errorf("get %v, want %v", value, want)
+	}
+}
+
+func TestSetIteratorDoesNotReorderStoredDates(t *testing.T) {
+	set := Set{}
+	later := time.Date(2026, 5, 20, 9, 0, 0, 0, time.UTC)
+	earlier := time.Date(2026, 5, 18, 9, 0, 0, 0, time.UTC)
+	set.RDate(later)
+	set.RDate(earlier)
+	set.ExDate(later)
+	set.ExDate(earlier)
+
+	before := set.String()
+	_ = set.All()
+	after := set.String()
+
+	if after != before {
+		t.Fatalf("Iterator reordered stored dates:\nbefore:\n%s\nafter:\n%s", before, after)
 	}
 }
 
@@ -411,6 +455,13 @@ func TestRuleSetChangeDTStartTimezoneRespected(t *testing.T) {
 		if e.Location().String() != "UTC" {
 			t.Fatal("expected", "UTC", "got", e.Location().String())
 		}
+	}
+}
+
+func TestSetRRuleNil(t *testing.T) {
+	set := Set{}
+	if err := set.RRule(nil); err == nil {
+		t.Fatal("got nil, want error")
 	}
 }
 
