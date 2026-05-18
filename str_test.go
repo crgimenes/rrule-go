@@ -431,3 +431,15 @@ func TestStrSetParseErrors(t *testing.T) {
 		}
 	}
 }
+
+func TestStrSetParseNewRRuleErrorKeepsCause(t *testing.T) {
+	_, err := StrSliceToRRuleSet([]string{"RRULE:FREQ=DAILY;BYHOUR=24"})
+	if err == nil {
+		t.Fatal("got nil, want error")
+	}
+
+	want := "NewRRule failed: byhour must be between 0 and 23"
+	if err.Error() != want {
+		t.Fatalf("got %q, want %q", err.Error(), want)
+	}
+}

@@ -91,6 +91,11 @@ func TestInvalidRRules(t *testing.T) {
 			wantErr: "bysecond must be between 0 and 59",
 		},
 		{
+			desc:    "Freq over",
+			rrule:   ROption{Freq: Frequency(7)},
+			wantErr: "freq must be between 0 and 6",
+		},
+		{
 			desc:    "Bysecond over",
 			rrule:   ROption{Freq: YEARLY, Bysecond: []int{60}},
 			wantErr: "bysecond must be between 0 and 59",
@@ -199,6 +204,36 @@ func TestInvalidRRules(t *testing.T) {
 			desc:    "Interval under",
 			rrule:   ROption{Freq: DAILY, Interval: -1},
 			wantErr: "interval must be greater than 0",
+		},
+		{
+			desc: "Hourly schedule with conflicting Byhour",
+			rrule: ROption{
+				Freq:     HOURLY,
+				Interval: 3,
+				Byhour:   []int{11},
+				Dtstart:  time.Date(2000, 3, 22, 12, 0, 0, 0, time.UTC),
+			},
+			wantErr: "invalid rrule byxx generates an empty set",
+		},
+		{
+			desc: "Minutely schedule with conflicting Byminute",
+			rrule: ROption{
+				Freq:     MINUTELY,
+				Interval: 5,
+				Byminute: []int{30},
+				Dtstart:  time.Date(2000, 3, 22, 12, 31, 0, 0, time.UTC),
+			},
+			wantErr: "invalid rrule byxx generates an empty set",
+		},
+		{
+			desc: "Secondly schedule with conflicting Bysecond",
+			rrule: ROption{
+				Freq:     SECONDLY,
+				Interval: 5,
+				Bysecond: []int{30},
+				Dtstart:  time.Date(2000, 3, 22, 12, 0, 31, 0, time.UTC),
+			},
+			wantErr: "invalid rrule byxx generates an empty set",
 		},
 	}
 
@@ -3858,6 +3893,37 @@ func TestBetweenInc(t *testing.T) {
 	}
 }
 
+func TestBeforeAfterBetweenTruncateNanoseconds(t *testing.T) {
+	r, _ := NewRRule(ROption{Freq: DAILY,
+		Dtstart: time.Date(1997, 9, 2, 9, 0, 0, 999, time.UTC)})
+
+	before := r.Before(time.Date(1997, 9, 5, 9, 0, 0, 999, time.UTC), true)
+	if want := time.Date(1997, 9, 5, 9, 0, 0, 0, time.UTC); before != want {
+		t.Errorf("Before got %v, want %v", before, want)
+	}
+
+	after := r.After(time.Date(1997, 9, 4, 9, 0, 0, 999, time.UTC), true)
+	if want := time.Date(1997, 9, 4, 9, 0, 0, 0, time.UTC); after != want {
+		t.Errorf("After got %v, want %v", after, want)
+	}
+
+	between := r.Between(
+		time.Date(1997, 9, 2, 9, 0, 0, 999, time.UTC),
+		time.Date(1997, 9, 6, 9, 0, 0, 999, time.UTC),
+		true,
+	)
+	want := []time.Time{
+		time.Date(1997, 9, 2, 9, 0, 0, 0, time.UTC),
+		time.Date(1997, 9, 3, 9, 0, 0, 0, time.UTC),
+		time.Date(1997, 9, 4, 9, 0, 0, 0, time.UTC),
+		time.Date(1997, 9, 5, 9, 0, 0, 0, time.UTC),
+		time.Date(1997, 9, 6, 9, 0, 0, 0, time.UTC),
+	}
+	if !timesEqual(between, want) {
+		t.Errorf("Between got %v, want %v", between, want)
+	}
+}
+
 func TestAllWithDefaultUtil(t *testing.T) {
 	r, _ := NewRRule(ROption{Freq: YEARLY,
 		Dtstart: time.Date(1997, 9, 2, 9, 0, 0, 0, time.UTC)})
@@ -3923,6 +3989,113 @@ func TestRuleChangeDTStartTimezoneRespected(t *testing.T) {
 		if (h + m + s) != 0 {
 			t.Fatal("expected", "0", "got", h, m, s)
 		}
+	}
+}
+
+func TestHourlyDSTTransitionKeepsAbsoluteHourlySteps(t *testing.T) {
+	sydney, err := time.LoadLocation("Australia/Sydney")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name    string
+		start   time.Time
+		wantStr []string
+	}{
+		{
+			name:  "start",
+			start: time.Date(2022, 10, 2, 1, 0, 0, 0, sydney),
+			wantStr: []string{
+				"2022-10-02 01:00:00 +1000 AEST",
+				"2022-10-02 03:00:00 +1100 AEDT",
+				"2022-10-02 04:00:00 +1100 AEDT",
+			},
+		},
+		{
+			name:  "end",
+			start: time.Date(2023, 4, 2, 1, 0, 0, 0, sydney),
+			wantStr: []string{
+				"2023-04-02 01:00:00 +1100 AEDT",
+				"2023-04-02 02:00:00 +1100 AEDT",
+				"2023-04-02 02:00:00 +1000 AEST",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			r, err := NewRRule(ROption{
+				Freq:    HOURLY,
+				Count:   len(tc.wantStr),
+				Dtstart: tc.start,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			got := r.All()
+			if len(got) != len(tc.wantStr) {
+				t.Fatalf("got %d occurrences, want %d: %v", len(got), len(tc.wantStr), got)
+			}
+			for i := range got {
+				if got[i].String() != tc.wantStr[i] {
+					t.Errorf("occurrence %d got %q, want %q", i, got[i].String(), tc.wantStr[i])
+				}
+			}
+		})
+	}
+}
+
+func TestConstructBysetFiltersUnreachableValues(t *testing.T) {
+	r, err := NewRRule(ROption{
+		Freq:     HOURLY,
+		Count:    3,
+		Interval: 4,
+		Byhour:   []int{1, 3, 5, 9, 12, 17, 23},
+		Dtstart:  time.Date(2000, 3, 22, 17, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := []time.Time{
+		time.Date(2000, 3, 22, 17, 0, 0, 0, time.UTC),
+		time.Date(2000, 3, 23, 1, 0, 0, 0, time.UTC),
+		time.Date(2000, 3, 23, 5, 0, 0, 0, time.UTC),
+	}
+	if got := r.All(); !timesEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestDTStartErrorDoesNotChangeRule(t *testing.T) {
+	start := time.Date(2000, 3, 22, 12, 0, 0, 0, time.UTC)
+	r, err := NewRRule(ROption{
+		Freq:     HOURLY,
+		Count:    2,
+		Interval: 3,
+		Byhour:   []int{12},
+		Dtstart:  start,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = r.DTStart(time.Date(2000, 3, 22, 13, 0, 0, 0, time.UTC))
+	if err == nil {
+		t.Fatal("got nil, want error")
+	}
+	if got := r.GetDTStart(); got != start {
+		t.Fatalf("DTSTART changed after failed rebuild: got %v, want %v", got, start)
+	}
+
+	want := []time.Time{
+		time.Date(2000, 3, 22, 12, 0, 0, 0, time.UTC),
+		time.Date(2000, 3, 23, 12, 0, 0, 0, time.UTC),
+	}
+	if got := r.All(); !timesEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
 	}
 }
 

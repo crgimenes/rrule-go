@@ -141,12 +141,11 @@ func NewRRule(arg ROption) (*RRule, error) {
 	if err := validateBounds(arg); err != nil {
 		return nil, err
 	}
-	r := buildRRule(arg)
-	return &r, nil
+	return buildRRule(arg)
 }
 
-func buildRRule(arg ROption) RRule {
-	r := RRule{}
+func buildRRule(arg ROption) (*RRule, error) {
+	r := &RRule{}
 	r.OrigOptions = arg
 	// FREQ default to YEARLY
 	r.freq = arg.Freq
@@ -221,6 +220,13 @@ func buildRRule(arg ROption) RRule {
 		}
 	} else {
 		r.byhour = arg.Byhour
+		if r.freq == HOURLY {
+			validByhour, err := constructByset(r.dtstart.Hour(), r.interval, r.byhour, 24)
+			if err != nil {
+				return nil, err
+			}
+			r.byhour = validByhour
+		}
 	}
 	if len(arg.Byminute) == 0 {
 		if r.freq < MINUTELY {
@@ -228,6 +234,13 @@ func buildRRule(arg ROption) RRule {
 		}
 	} else {
 		r.byminute = arg.Byminute
+		if r.freq == MINUTELY {
+			validByminute, err := constructByset(r.dtstart.Minute(), r.interval, r.byminute, 60)
+			if err != nil {
+				return nil, err
+			}
+			r.byminute = validByminute
+		}
 	}
 	if len(arg.Bysecond) == 0 {
 		if r.freq < SECONDLY {
@@ -235,6 +248,13 @@ func buildRRule(arg ROption) RRule {
 		}
 	} else {
 		r.bysecond = arg.Bysecond
+		if r.freq == SECONDLY {
+			validBysecond, err := constructByset(r.dtstart.Second(), r.interval, r.bysecond, 60)
+			if err != nil {
+				return nil, err
+			}
+			r.bysecond = validBysecond
+		}
 	}
 
 	// Reset the timeset value
@@ -253,7 +273,7 @@ func buildRRule(arg ROption) RRule {
 	}
 
 	r.Options = arg
-	return r
+	return r, nil
 }
 
 // validateBounds checks the RRule's options are within the boundaries defined
@@ -261,6 +281,10 @@ func buildRRule(arg ROption) RRule {
 // as going outside these bounds trivially will never have any dates. This can catch
 // obvious user error.
 func validateBounds(arg ROption) error {
+	if arg.Freq < YEARLY || arg.Freq > SECONDLY {
+		return fmt.Errorf("freq must be between %d and %d", YEARLY, SECONDLY)
+	}
+
 	bounds := []struct {
 		field     []int
 		param     string
@@ -309,6 +333,22 @@ func validateBounds(arg ROption) error {
 	}
 
 	return nil
+}
+
+// constructByset filters same-level BYxxx values that can be reached by the interval cycle.
+func constructByset(start, interval int, byxx []int, base int) ([]int, error) {
+	validSet := make([]int, 0, len(byxx))
+	step := gcd(interval, base)
+	for _, value := range byxx {
+		if pymod(value-start, step) == 0 && !contains(validSet, value) {
+			validSet = append(validSet, value)
+		}
+	}
+
+	if len(validSet) == 0 {
+		return nil, errors.New("invalid rrule byxx generates an empty set")
+	}
+	return validSet, nil
 }
 
 type iterInfo struct {
@@ -556,6 +596,22 @@ func prepareTimeSet(set *[]time.Time, length int) {
 	*set = (*set)[:0]
 }
 
+func (iterator *rIterator) dateTimeFromDayAndTime(dayIndex int, timeTemp time.Time) time.Time {
+	date := iterator.ii.firstyday.AddDate(0, 0, dayIndex)
+	hour, minute, second := timeTemp.Clock()
+	if iterator.ii.rrule.freq >= HOURLY {
+		return date.Add(time.Duration(hour)*time.Hour +
+			time.Duration(minute)*time.Minute +
+			time.Duration(second)*time.Second +
+			time.Duration(timeTemp.Nanosecond()))
+	}
+
+	dateYear, dateMonth, dateDay := date.Date()
+	return time.Date(dateYear, dateMonth, dateDay,
+		hour, minute, second,
+		timeTemp.Nanosecond(), timeTemp.Location())
+}
+
 // rIterator is a iterator of RRule
 type rIterator struct {
 	year     int
@@ -632,11 +688,7 @@ func (iterator *rIterator) generate() {
 					continue
 				}
 				timeTemp := iterator.timeset[timepos]
-				dateYear, dateMonth, dateDay := iterator.ii.firstyday.AddDate(0, 0, i).Date()
-				tempHour, tempMinute, tempSecond := timeTemp.Clock()
-				res := time.Date(dateYear, dateMonth, dateDay,
-					tempHour, tempMinute, tempSecond,
-					timeTemp.Nanosecond(), timeTemp.Location())
+				res := iterator.dateTimeFromDayAndTime(i, timeTemp)
 				if !timeContains(poslist, res) {
 					poslist = append(poslist, res)
 				}
@@ -666,12 +718,8 @@ func (iterator *rIterator) generate() {
 					continue
 				}
 				i := day.Int
-				dateYear, dateMonth, dateDay := iterator.ii.firstyday.AddDate(0, 0, i).Date()
 				for _, timeTemp := range iterator.timeset {
-					tempHour, tempMinute, tempSecond := timeTemp.Clock()
-					res := time.Date(dateYear, dateMonth, dateDay,
-						tempHour, tempMinute, tempSecond,
-						timeTemp.Nanosecond(), timeTemp.Location())
+					res := iterator.dateTimeFromDayAndTime(i, timeTemp)
 					if !r.until.IsZero() && res.After(r.until) {
 						r.len = iterator.total
 						iterator.finished = true
@@ -934,12 +982,19 @@ func (r *RRule) After(dt time.Time, inc bool) time.Time {
 	return after(r.Iterator(), dt, inc)
 }
 
-// DTStart set a new DTSTART for the rule and recalculates the timeset if needed.
+// DTStart sets a new DTSTART for the rule and recalculates the timeset if needed.
+// It returns an error when the new start makes same-level BYxxx filters unreachable.
 // It will be truncated to second precision.
 // Default to `time.Now().UTC().Truncate(time.Second)`.
-func (r *RRule) DTStart(dt time.Time) {
-	r.OrigOptions.Dtstart = dt.Truncate(time.Second)
-	*r = buildRRule(r.OrigOptions)
+func (r *RRule) DTStart(dt time.Time) error {
+	options := r.OrigOptions
+	options.Dtstart = dt.Truncate(time.Second)
+	rrule, err := buildRRule(options)
+	if err != nil {
+		return err
+	}
+	*r = *rrule
+	return nil
 }
 
 // GetDTStart gets DTSTART time for rrule
@@ -947,12 +1002,19 @@ func (r *RRule) GetDTStart() time.Time {
 	return r.dtstart
 }
 
-// Until set a new UNTIL for the rule and recalculates the timeset if needed.
+// Until sets a new UNTIL for the rule and recalculates the timeset if needed.
+// It returns an error when rebuilding the existing rule options fails.
 // It will be truncated to second precision.
 // Default to `Dtstart.Add(time.Duration(1<<63 - 1))`, approximately 290 years.
-func (r *RRule) Until(ut time.Time) {
-	r.OrigOptions.Until = ut.Truncate(time.Second)
-	*r = buildRRule(r.OrigOptions)
+func (r *RRule) Until(ut time.Time) error {
+	options := r.OrigOptions
+	options.Until = ut.Truncate(time.Second)
+	rrule, err := buildRRule(options)
+	if err != nil {
+		return err
+	}
+	*r = *rrule
+	return nil
 }
 
 // GetUntil gets UNTIL time for rrule

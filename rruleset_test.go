@@ -293,6 +293,38 @@ func TestSetBetweenInc(t *testing.T) {
 	}
 }
 
+func TestSetBeforeAfterBetweenTruncateNanoseconds(t *testing.T) {
+	set := Set{}
+	r, _ := NewRRule(ROption{Freq: DAILY, Count: 7,
+		Dtstart: time.Date(1997, 9, 2, 9, 0, 0, 999, time.UTC)})
+	set.RRule(r)
+
+	before := set.Before(time.Date(1997, 9, 5, 9, 0, 0, 999, time.UTC), true)
+	if want := time.Date(1997, 9, 5, 9, 0, 0, 0, time.UTC); before != want {
+		t.Errorf("Before got %v, want %v", before, want)
+	}
+
+	after := set.After(time.Date(1997, 9, 4, 9, 0, 0, 999, time.UTC), true)
+	if want := time.Date(1997, 9, 4, 9, 0, 0, 0, time.UTC); after != want {
+		t.Errorf("After got %v, want %v", after, want)
+	}
+
+	between := set.Between(
+		time.Date(1997, 9, 3, 9, 0, 0, 999, time.UTC),
+		time.Date(1997, 9, 6, 9, 0, 0, 999, time.UTC),
+		true,
+	)
+	want := []time.Time{
+		time.Date(1997, 9, 3, 9, 0, 0, 0, time.UTC),
+		time.Date(1997, 9, 4, 9, 0, 0, 0, time.UTC),
+		time.Date(1997, 9, 5, 9, 0, 0, 0, time.UTC),
+		time.Date(1997, 9, 6, 9, 0, 0, 0, time.UTC),
+	}
+	if !timesEqual(between, want) {
+		t.Errorf("Between got %v, want %v", between, want)
+	}
+}
+
 func TestSetTrickyTimeZones(t *testing.T) {
 	set := Set{}
 
@@ -379,5 +411,31 @@ func TestRuleSetChangeDTStartTimezoneRespected(t *testing.T) {
 		if e.Location().String() != "UTC" {
 			t.Fatal("expected", "UTC", "got", e.Location().String())
 		}
+	}
+}
+
+func TestSetDTStartErrorDoesNotChangeSet(t *testing.T) {
+	start := time.Date(2000, 3, 22, 12, 0, 0, 0, time.UTC)
+	rule, err := NewRRule(ROption{
+		Freq:     HOURLY,
+		Count:    1,
+		Interval: 3,
+		Byhour:   []int{12},
+		Dtstart:  start,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	set := &Set{}
+	if err := set.RRule(rule); err != nil {
+		t.Fatal(err)
+	}
+	err = set.DTStart(time.Date(2000, 3, 22, 13, 0, 0, 0, time.UTC))
+	if err == nil {
+		t.Fatal("got nil, want error")
+	}
+	if got := set.GetDTStart(); got != start {
+		t.Fatalf("DTSTART changed after failed rebuild: got %v, want %v", got, start)
 	}
 }

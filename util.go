@@ -58,6 +58,19 @@ func divmod(a, b int) (div, mod int) {
 	return int(math.Floor(float64(a) / float64(b))), pymod(a, b)
 }
 
+func gcd(a, b int) int {
+	if a < 0 {
+		a = -a
+	}
+	if b < 0 {
+		b = -b
+	}
+	for b != 0 {
+		a, b = b, a%b
+	}
+	return a
+}
+
 func contains(list []int, elem int) bool {
 	return slices.Contains(list, elem)
 }
@@ -141,6 +154,9 @@ func all(next Next) []time.Time {
 }
 
 func between(next Next, after, before time.Time, inc bool) []time.Time {
+	after = after.Truncate(time.Second)
+	before = before.Truncate(time.Second)
+
 	result := []time.Time{}
 	for {
 		v, ok := next()
@@ -154,6 +170,8 @@ func between(next Next, after, before time.Time, inc bool) []time.Time {
 }
 
 func before(next Next, dt time.Time, inc bool) time.Time {
+	dt = dt.Truncate(time.Second)
+
 	result := time.Time{}
 	for {
 		v, ok := next()
@@ -165,6 +183,8 @@ func before(next Next, dt time.Time, inc bool) time.Time {
 }
 
 func after(next Next, dt time.Time, inc bool) time.Time {
+	dt = dt.Truncate(time.Second)
+
 	for {
 		v, ok := next()
 		if !ok {
